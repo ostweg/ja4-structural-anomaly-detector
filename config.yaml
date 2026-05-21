@@ -1,0 +1,19 @@
+# Network Hyperparameters
+model:
+  d_model: 64
+  nhead: 4
+  num_layers: 3
+
+# Training Parameters
+training:
+  max_epochs: 2
+  batch_size: 512
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  mask_probability: 0.15
+  patience: 3
+
+# Environment
+system:
+  device: "mps"  # Target M4 Pro GPU
+  checkpoint_path: "tabular_bert_ja4.pt"
