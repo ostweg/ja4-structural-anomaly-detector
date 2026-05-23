@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch
 import yaml
 import json
+import wandb
 from JA4Processor import JA4Processor
 from StructuralMLMDataset import StructuralMLMDataset
 from torch.utils.data import DataLoader
@@ -18,9 +19,21 @@ def main():
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    with open("wandb.yaml", "r") as f:
+        wandb_config = yaml.safe_load(f)
+
     device = torch.device(config['system']['device'])
 
-    df = load_csv_to_dataframe("data/ja4-ja4h.csv",sep='\t')
+    run_name = f"tabular-bert-ja4-{config['model']['d_model']}DIM-{config['model']['nhead']}HEAD-{config['model']['num_layers']}LYRS--{config['training']['batch_size']}BS-{config['training']['learning_rate']}LR-{config['training']['max_epochs']}EPOCHS"
+
+    run = wandb.init(
+        entity=wandb_config['config']['entity'],
+        project=wandb_config['config']['project'],
+        name=run_name,
+        config=config
+    )
+
+    df = load_csv_to_dataframe("data/train/ja4-ja4h.csv",sep='\t')
     df.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
 
     global_vocab = {'[MASK]': 0, '[PAD]': 1}
@@ -59,6 +72,9 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'])
     
+    best_loss = float('inf')
+    patience_counter = 0
+
     model.train()
     print(f"Training structural language engine over {config['training']['max_epochs']} epochs on native GPU...{device}")
 
@@ -77,6 +93,7 @@ def main():
             
         epoch_loss = total_loss / len(dataloader)    
         print(f"Epoch {epoch+1:02d}/{config['training']['max_epochs']} - Cross-Entropy Reconstruction Loss: {epoch_loss:.4f}")
+        run.log({ "loss": epoch_loss},step=epoch+1)
 
         if epoch_loss < best_loss - 0.001:
             best_loss = epoch_loss
@@ -87,6 +104,8 @@ def main():
             if patience_counter >= config['training']['patience']:
                 print(f"\n[Early Stopping] Loss plateaued at {epoch_loss:.4f}. Convergence reached.")
                 break
+    
+    run.finish()
 
     with open("global_vocab.json", "w") as f:
         json.dump(global_vocab, f, indent=4)

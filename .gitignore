@@ -1,2 +1,6 @@
 venv
 data
+wandb.yaml
+wandb   
+tabular_bert_ja4.pt
+global_vocab.json
