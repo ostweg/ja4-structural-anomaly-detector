@@ -138,7 +138,7 @@ def is_known_bad_bot(df):
     return df
 
 def main():
-    INPUT_PATH = Path('data/test/ja4+_db.json')
+    INPUT_PATH = Path('data/origin/ja4+_db.json')
     OUTPUT_PATH = Path('data/test/ja4+_labeled.csv')
 
     df = load_ja4plus_json(INPUT_PATH)

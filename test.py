@@ -9,7 +9,7 @@ from TabularBERT import TabularBERT
 import torch.nn as nn
 import numpy as np
 
-def log_test_to_wandb(df, threshold=75):
+def log_test_to_wandb(df_test_results, threshold=75):
     
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
@@ -20,25 +20,45 @@ def log_test_to_wandb(df, threshold=75):
     run_name = f"tabular-bert-ja4-{config['model']['d_model']}DIM-{config['model']['nhead']}HEAD-{config['model']['num_layers']}LYRS--{config['training']['batch_size']}BS-{config['training']['learning_rate']}LR-{config['training']['max_epochs']}EPOCHS"
 
     wandb.init(
-        ntity=wandb_config['config']['entity'],
+        entity=wandb_config['config']['entity'],
         project=wandb_config['config']['project'],
         job_type="evaluation",
-        name="TEST-" + run_name,
+        name="TEST-InternalDB-" + run_name,
         config=config
     )
 
-    scores_list = df['structural_anomaly_score'].tolist()
+    scores_list = df_test_results['structural_anomaly_score'].tolist()
 
     wandb.log({
         "anomaly_score_distribution": wandb.plot.histogram(
             wandb.Table(data=[[s] for s in scores_list], columns=["score"]),
             "score", 
-            title="Test Dataset Score Separation"
+            title="Test Dataset Anomaly Score Separation"
         )
     })
 
-    df['is_malicious'] = df['structural_anomaly_score'] >= threshold
+    top_alerts = df_test_results.sort_values(by='structural_anomaly_score', ascending=False).head(20)
     
+    alerts_table = wandb.Table(dataframe=top_alerts[[
+        'ja4_fingerprint', 'ja4h_fingerprint', 'structural_anomaly_score'
+    ]])
+    wandb.log({"top_20_critical_alerts": alerts_table})
+
+    tp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == True)])
+    fp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == False)])
+    fn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == True)])
+    tn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == False)])
+    
+    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+
+    wandb.log({
+        "metrics/true_positive_rate": tpr,
+        "metrics/false_positive_rate": fpr,
+        "counts/total_alerts_triggered": tp + fp
+    })
+
+    wandb.finish()
 
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -51,8 +71,10 @@ def main():
     
     print("Loading golden reference dataset...")
     df_golden = pd.read_csv("data/test/Book1.csv", sep=',')
-    df_golden.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
+    # df_golden.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
     df_golden['ja4h_structural'] = df_golden['ja4h_fingerprint'].str.split('_').str[:3].str.join('_')
+
+    df_golden = df_golden.sample(frac=1, random_state=42).reset_index(drop=True)  # Shuffle the dataset
 
     ja4_proc = JA4Processor(mode='ja4', vocab=global_vocab)
     ja4h_proc = JA4Processor(mode='ja4h', vocab=global_vocab)
@@ -105,9 +127,10 @@ def main():
 
     # 6. ANALYZE THE GOLDEN RESULTS
     df_golden['structural_anomaly_score'] = golden_scores
-    print("\nGolden Dataset Scoring Complete!")
-    print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(20))
     log_test_to_wandb(df_golden, threshold=75)
 
+    print("\nGolden Dataset Scoring Complete!")
+    print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
+    
 if __name__ == "__main__":
     main()
