@@ -4,3 +4,5 @@ wandb.yaml
 wandb   
 tabular_bert_ja4.pt
 global_vocab.json
+data/*
+.DS_Store
