@@ -2,7 +2,8 @@ venv
 data
 wandb.yaml
 wandb   
-tabular_bert_ja4.pt
+tabular-bert*
 global_vocab.json
 data/*
 .DS_Store
+extraction

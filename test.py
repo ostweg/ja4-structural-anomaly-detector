@@ -23,7 +23,7 @@ def log_test_to_wandb(df_test_results, threshold=75):
         entity=wandb_config['config']['entity'],
         project=wandb_config['config']['project'],
         job_type="evaluation",
-        name="TEST-InternalDB-" + run_name,
+        name="TEST-PublicCustomDB-" + run_name,
         config=config
     )
 
@@ -48,7 +48,7 @@ def log_test_to_wandb(df_test_results, threshold=75):
     fp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == False)])
     fn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == True)])
     tn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == False)])
-    
+
     tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
 
@@ -70,7 +70,7 @@ def main():
     seq_len = 16 # 8 fields from JA4 + 8 fields from JA4H
     
     print("Loading golden reference dataset...")
-    df_golden = pd.read_csv("data/test/Book1.csv", sep=',')
+    df_golden = pd.read_csv("data/test/MSFTPrivateJA4+.csv", sep=',')
     # df_golden.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
     df_golden['ja4h_structural'] = df_golden['ja4h_fingerprint'].str.split('_').str[:3].str.join('_')
 
@@ -104,7 +104,7 @@ def main():
     X_golden_tokens = np.hstack([ja4_tokens, ja4h_tokens])
 
     model = TabularBERT(vocab_size=vocab_size, seq_len=seq_len).to(device)
-    model.load_state_dict(torch.load("tabular_bert_ja4.pt"))
+    model.load_state_dict(torch.load("tabular-bert-ja4-64DIM-4HEAD-3LYRS--512BS-0.001LR-20EPOCHS.pt"))
     model.eval()
     
     per_token_loss_fn = nn.CrossEntropyLoss(reduction='none')
