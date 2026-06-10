@@ -24,7 +24,8 @@ class JA4Processor:
     def fit(self, fingerprints):
         data = [self.parser(f) for f in fingerprints]
         df = pd.DataFrame(data, columns=self.cols)
-
+        
+        # Build structural tokens by mapping 'column_name:value' directly into our vocabulary
         for col in self.cols:
             for val in df[col].astype(str).unique():
                 token_str = f"{col}:{val}"

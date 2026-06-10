@@ -35,12 +35,14 @@ def main():
 
     df = load_csv_to_dataframe("data/train/ja4-ja4h.csv",sep='\t')
     df.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
-
+    
+    # Create a unified global vocabulary for our structural grammar 
     global_vocab = {'[MASK]': 0, '[PAD]': 1}
 
+    # Bind both processors to the exact same shared vocabulary
     ja4_proc = JA4Processor(mode='ja4', vocab=global_vocab)
     ja4h_proc = JA4Processor(mode='ja4h', vocab=global_vocab)
-
+    # fit on the full dataset to map all normal token variants across your 2M logs
     ja4_proc.fit(df['ja4_fingerprint'])
     ja4h_proc.fit(df['ja4h_fingerprint'])
 
@@ -50,9 +52,11 @@ def main():
     df_unique = df.drop_duplicates(subset=['ja4_fingerprint','ja4h_structural']).copy()
     print(f"Depulicated unique sessions: {len(df_unique)}")
 
+    # transform the strings into sequence integer arrays
     ja4_vectors = ja4_proc.transform(df_unique['ja4_fingerprint'])
     ja4h_vectors = ja4h_proc.transform(df_unique['ja4h_structural'])
 
+    # horizontal stack array to create sequence of 16 tokens per session
     X_tokens = np.hstack([ja4_vectors, ja4h_vectors])
 
     vocab_size = len(global_vocab)
@@ -70,6 +74,7 @@ def main():
                         num_layers=config['model']['num_layers']).to(device)
     
     criterion = nn.CrossEntropyLoss()
+    # A slightly adaptive weight decay to stabilize long training sessions
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'])
     
     best_loss = float('inf')
@@ -90,16 +95,20 @@ def main():
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-            
+        
+        #calculate loss & log to wandb
         epoch_loss = total_loss / len(dataloader)    
         print(f"Epoch {epoch+1:02d}/{config['training']['max_epochs']} - Cross-Entropy Reconstruction Loss: {epoch_loss:.4f}")
         run.log({ "loss": epoch_loss},step=epoch+1)
 
+        # Early stopping with a small threshold to prevent overfitting
         if epoch_loss < best_loss - 0.001:
             best_loss = epoch_loss
             patience_counter = 0
+            # Save the optimal model weights natively
             torch.save(model.state_dict(), "tabular_bert_ja4.pt")
         else:
+            # If patience is greater than 3 epochs and no improvement, we can stop training early
             patience_counter += 1
             if patience_counter >= config['training']['patience']:
                 print(f"\n[Early Stopping] Loss plateaued at {epoch_loss:.4f}. Convergence reached.")
