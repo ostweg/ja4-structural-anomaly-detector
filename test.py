@@ -24,7 +24,7 @@ def log_test_to_wandb(df_test_results, threshold=75):
         entity=wandb_config['config']['entity'],
         project=wandb_config['config']['project'],
         job_type="evaluation",
-        name="TEST-PublicCustomDB-" + run_name,
+        name="MSFTPrivateBig-" + run_name,
         config=config
     )
 
@@ -60,6 +60,15 @@ def log_test_to_wandb(df_test_results, threshold=75):
         "counts/total_alerts_triggered": tp + fp
     })
 
+    print("\n" + "="*40)
+    print("         BERT BASELINE RESULTS         ")
+    print("="*40)
+    print(f"True Positives (Caught Canaries): {tp}/{tp+fn}")
+    print(f"False Positives (False Alarms):  {fp}/{fp+tn}")
+    print(f"True Positive Rate (Sensitivity): {tpr:.4f}")
+    print(f"False Positive Rate (Fall-out):   {fpr:.4f}")
+    print("="*40)
+
     wandb.finish()
 
 def main():
@@ -73,7 +82,7 @@ def main():
     seq_len = 16 # 8 fields from JA4 + 8 fields from JA4H
     
     print("Loading golden reference dataset...")
-    df_golden = pd.read_csv("data/test/MSFTPrivateJA4+.csv", sep=',')
+    df_golden = pd.read_csv("data/test/MSFTPrivateJA4+_big.csv", sep=',')
 
     # remove last component (d_hash) of ja4h fingerprint and save to column
     df_golden['ja4h_structural'] = df_golden['ja4h_fingerprint'].str.split('_').str[:3].str.join('_')
@@ -112,7 +121,7 @@ def main():
     X_golden_tokens = np.hstack([ja4_tokens, ja4h_tokens])
 
     model = TabularBERT(vocab_size=vocab_size, seq_len=seq_len).to(device)
-    model.load_state_dict(torch.load("tabular-bert-ja4-64DIM-4HEAD-3LYRS--512BS-0.001LR-20EPOCHS.pt"))
+    model.load_state_dict(torch.load("tabular-bert-ja4-64DIM-4HEAD-3LYRS--512BS-0.001LR-30EPOCHS.pt"))
     model.eval()
     
     per_token_loss_fn = nn.CrossEntropyLoss(reduction='none')
@@ -138,8 +147,8 @@ def main():
     df_golden['structural_anomaly_score'] = golden_scores
     log_test_to_wandb(df_golden, threshold=75)
 
-    print("\nGolden Dataset Scoring Complete!")
-    print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
+    # print("\nGolden Dataset Scoring Complete!")
+    # print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
     
 if __name__ == "__main__":
     main()
