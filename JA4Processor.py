@@ -25,12 +25,13 @@ class JA4Processor:
         data = [self.parser(f) for f in fingerprints]
         df = pd.DataFrame(data, columns=self.cols)
         
+        if self.vocab != None:
         # Build structural tokens by mapping 'column_name:value' directly into our vocabulary
-        for col in self.cols:
-            for val in df[col].astype(str).unique():
-                token_str = f"{col}:{val}"
-                if token_str not in self.vocab:
-                    self.vocab[token_str] = len(self.vocab)
+            for col in self.cols:
+                for val in df[col].astype(str).unique():
+                    token_str = f"{col}:{val}"
+                    if token_str not in self.vocab:
+                        self.vocab[token_str] = len(self.vocab)
         return self
 
     def transform(self, fingerprints):
@@ -38,10 +39,12 @@ class JA4Processor:
         data = [self.parser(f) for f in fingerprints]
         df = pd.DataFrame(data, columns=self.cols)
 
-        # Map strings to their unique vocabulary integer index
-        token_matrix = np.zeros((len(df), len(self.cols)), dtype=np.int32)
-        for i, col in enumerate(self.cols):
-            # Fallback to [PAD] token (1) if an entirely unseen string is passed during inference
-            token_matrix[:, i] = df[col].astype(str).apply(lambda x: self.vocab.get(f"{col}:{x}", 1)).values
-
-        return token_matrix
+        if self.vocab != None:
+            # Map strings to their unique vocabulary integer index
+            token_matrix = np.zeros((len(df), len(self.cols)), dtype=np.int32)
+            for i, col in enumerate(self.cols):
+                # Fallback to [PA1D] token (1) if an entirely unseen string is passed during inference
+                token_matrix[:, i] = df[col].astype(str).apply(lambda x: self.vocab.get(f"{col}:{x}", 1)).values
+                return token_matrix
+        else:
+            return df

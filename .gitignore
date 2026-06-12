@@ -7,3 +7,6 @@ global_vocab.json
 data/*
 .DS_Store
 extraction
+BASELINE-oneclass*
+oneclass*
+preprocessor*
