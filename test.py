@@ -9,17 +9,16 @@ from TabularBERT import TabularBERT
 import torch.nn as nn
 import numpy as np
 
-
-# logs results of tests to wandb
-def log_test_to_wandb(df_test_results, threshold=75):
+def log_test_to_wandb(df_test_results, threshold=70):
+    
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
     with open("wandb.yaml", "r") as f:
         wandb_config = yaml.safe_load(f)
 
-    run_name = f"tabular-bert-ja4-{config['model']['d_model']}DIM-{config['model']['nhead']}HEAD-{config['model']['num_layers']}LYRS--{config['training']['batch_size']}BS-{config['training']['learning_rate']}LR-{config['training']['max_epochs']}EPOCHS"
-    
+    run_name = f"tabular-bert-ja4-T70-{config['model']['d_model']}DIM-{config['model']['nhead']}HEAD-{config['model']['num_layers']}LYRS--{config['training']['batch_size']}BS-{config['training']['learning_rate']}LR-{config['training']['max_epochs']}EPOCHS"
+
     wandb.init(
         entity=wandb_config['config']['entity'],
         project=wandb_config['config']['project'],
@@ -45,36 +44,31 @@ def log_test_to_wandb(df_test_results, threshold=75):
     ]])
     wandb.log({"top_20_critical_alerts": alerts_table})
 
-    # if anomaly score is greater than threshold (meaning true) and actual ground truth is also true
     tp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == True)])
     fp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == False)])
     fn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == True)])
     tn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == False)])
+    
+    print(tp, fp, fn, tn)
 
     tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    f1_score = (2 * precision * tpr) / (precision + tpr) if (precision + tpr) > 0 else 0
 
     wandb.log({
         "metrics/true_positive_rate": tpr,
         "metrics/false_positive_rate": fpr,
+        "metrics/precision": precision,
+        "metrics/f1_score": f1_score,
         "counts/total_alerts_triggered": tp + fp
     })
-
-    print("\n" + "="*40)
-    print("         BERT BASELINE RESULTS         ")
-    print("="*40)
-    print(f"True Positives (Caught Canaries): {tp}/{tp+fn}")
-    print(f"False Positives (False Alarms):  {fp}/{fp+tn}")
-    print(f"True Positive Rate (Sensitivity): {tpr:.4f}")
-    print(f"False Positive Rate (Fall-out):   {fpr:.4f}")
-    print("="*40)
 
     wandb.finish()
 
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     
-    # load vocabulary
     with open("global_vocab.json", "r") as f:
         global_vocab = json.load(f)
         
@@ -83,8 +77,7 @@ def main():
     
     print("Loading golden reference dataset...")
     df_golden = pd.read_csv("data/test/MSFTPrivateJA4+_big.csv", sep=',')
-
-    # remove last component (d_hash) of ja4h fingerprint and save to column
+    # df_golden.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
     df_golden['ja4h_structural'] = df_golden['ja4h_fingerprint'].str.split('_').str[:3].str.join('_')
 
     df_golden = df_golden.sample(frac=1, random_state=42).reset_index(drop=True)  # Shuffle the dataset
@@ -95,8 +88,6 @@ def main():
     PAD_ID = global_vocab.get('[PAD]', 1)
 
     ja4_tokens_list = []
-
-    # handles cases where either ja4 or ja4h fingerprints are missing
 
     for val in df_golden['ja4_fingerprint']:
         if pd.isna(val) or str(val).strip() in ["", "0", "nan", "NaN"]:
@@ -116,8 +107,6 @@ def main():
 
     ja4_tokens = np.array(ja4_tokens_list)
     ja4h_tokens = np.array(ja4h_tokens_list)
-
-    # combine ja4 and ja4h tokens into one vector
     X_golden_tokens = np.hstack([ja4_tokens, ja4h_tokens])
 
     model = TabularBERT(vocab_size=vocab_size, seq_len=seq_len).to(device)
@@ -138,17 +127,16 @@ def main():
             flat_predictions = predictions.view(-1, vocab_size)
             flat_targets = inputs.view(-1)
             
-            # calculates whether predicted tokens match actual tokens and calculates score 
             losses = per_token_loss_fn(flat_predictions, flat_targets)
             batch_scores = losses.view(len(inputs), seq_len).sum(dim=1).cpu().numpy()
             golden_scores.extend(batch_scores)
 
     # 6. ANALYZE THE GOLDEN RESULTS
     df_golden['structural_anomaly_score'] = golden_scores
-    log_test_to_wandb(df_golden, threshold=75)
+    log_test_to_wandb(df_golden, threshold=70)
 
-    # print("\nGolden Dataset Scoring Complete!")
-    # print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
+    print("\nGolden Dataset Scoring Complete!")
+    print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
     
 if __name__ == "__main__":
     main()
