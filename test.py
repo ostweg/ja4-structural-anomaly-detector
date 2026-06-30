@@ -10,15 +10,18 @@ import torch.nn as nn
 import numpy as np
 
 def log_test_to_wandb(df_test_results, threshold=70):
-    
+    #load config containing hyperparameter configs.
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    #load config for wandb 
     with open("wandb.yaml", "r") as f:
         wandb_config = yaml.safe_load(f)
 
+    #specify run name given config params
     run_name = f"tabular-bert-ja4-T70-{config['model']['d_model']}DIM-{config['model']['nhead']}HEAD-{config['model']['num_layers']}LYRS--{config['training']['batch_size']}BS-{config['training']['learning_rate']}LR-{config['training']['max_epochs']}EPOCHS"
 
+    #initialize wandb auth
     wandb.init(
         entity=wandb_config['config']['entity'],
         project=wandb_config['config']['project'],
@@ -26,9 +29,11 @@ def log_test_to_wandb(df_test_results, threshold=70):
         name="MSFTPrivateBig-" + run_name,
         config=config
     )
-
+    
+    # convert reconstruction loss to list
     scores_list = df_test_results['reconstruction_loss'].tolist()
 
+    # create custom histogram chart in wandb
     wandb.log({
         "reconstruction_loss_distribution": wandb.plot.histogram(
             wandb.Table(data=[[s] for s in scores_list], columns=["score"]),
@@ -37,13 +42,16 @@ def log_test_to_wandb(df_test_results, threshold=70):
         )
     })
 
+    # get first top 20 results
     top_alerts = df_test_results.sort_values(by='reconstruction_loss', ascending=False).head(20)
     
+    # display top alerts using ja4 ja4h loss column
     alerts_table = wandb.Table(dataframe=top_alerts[[
         'ja4_fingerprint', 'ja4h_fingerprint', 'reconstruction_loss'
     ]])
     wandb.log({"top_20_critical_alerts": alerts_table})
 
+    # calculate tp, fp, fn, tn scores
     tp = len(df_test_results[(df_test_results['reconstruction_loss'] >= threshold) & (df_test_results['bad_origin'] == True)])
     fp = len(df_test_results[(df_test_results['reconstruction_loss'] >= threshold) & (df_test_results['bad_origin'] == False)])
     fn = len(df_test_results[(df_test_results['reconstruction_loss'] < threshold) & (df_test_results['bad_origin'] == True)])
@@ -51,6 +59,7 @@ def log_test_to_wandb(df_test_results, threshold=70):
     
     print(tp, fp, fn, tn)
 
+    # calculate final metrics
     tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
@@ -69,6 +78,7 @@ def log_test_to_wandb(df_test_results, threshold=70):
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     
+    # load vocabulary from training
     with open("global_vocab.json", "r") as f:
         global_vocab = json.load(f)
         
@@ -78,6 +88,8 @@ def main():
     print("Loading golden reference dataset...")
     df_golden = pd.read_csv("data/test/MSFTPrivateJA4+_big.csv", sep=',')
     # df_golden.rename(columns={'GatewayJA4': 'ja4_fingerprint', 'GatewayJA4H': 'ja4h_fingerprint'}, inplace=True)
+    
+    # drop last column to prevent enormous vocab
     df_golden['ja4h_structural'] = df_golden['ja4h_fingerprint'].str.split('_').str[:3].str.join('_')
 
     df_golden = df_golden.sample(frac=1, random_state=42).reset_index(drop=True)  # Shuffle the dataset
@@ -85,6 +97,7 @@ def main():
     ja4_proc = JA4Processor(mode='ja4', vocab=global_vocab)
     ja4h_proc = JA4Processor(mode='ja4h', vocab=global_vocab)
 
+    # assign padding token for when either ja4 or ja4h is not present
     PAD_ID = global_vocab.get('[PAD]', 1)
 
     ja4_tokens_list = []
@@ -119,14 +132,19 @@ def main():
 
     golden_scores = []
     print("Scoring golden dataset for unusual structures...")
+
     with torch.no_grad():
         for batch in golden_dataloader:
             inputs = batch[0].to(device)
+
+            # get predictions from model
             predictions = model(inputs)
-            
+
+            # change tensor shape withouth changing data to make data ready for CrossEntropyLoss
             flat_predictions = predictions.view(-1, vocab_size)
             flat_targets = inputs.view(-1)
             
+            # calculate loss between prediction and actual value
             losses = per_token_loss_fn(flat_predictions, flat_targets)
             batch_scores = losses.view(len(inputs), seq_len).sum(dim=1).cpu().numpy()
             golden_scores.extend(batch_scores)
