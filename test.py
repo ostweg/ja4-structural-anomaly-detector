@@ -27,27 +27,27 @@ def log_test_to_wandb(df_test_results, threshold=70):
         config=config
     )
 
-    scores_list = df_test_results['structural_anomaly_score'].tolist()
+    scores_list = df_test_results['reconstruction_loss'].tolist()
 
     wandb.log({
-        "anomaly_score_distribution": wandb.plot.histogram(
+        "reconstruction_loss_distribution": wandb.plot.histogram(
             wandb.Table(data=[[s] for s in scores_list], columns=["score"]),
             "score", 
-            title="Test Dataset Anomaly Score Separation"
+            title="Test Dataset Reconstruction Score Separation"
         )
     })
 
-    top_alerts = df_test_results.sort_values(by='structural_anomaly_score', ascending=False).head(20)
+    top_alerts = df_test_results.sort_values(by='reconstruction_loss', ascending=False).head(20)
     
     alerts_table = wandb.Table(dataframe=top_alerts[[
-        'ja4_fingerprint', 'ja4h_fingerprint', 'structural_anomaly_score'
+        'ja4_fingerprint', 'ja4h_fingerprint', 'reconstruction_loss'
     ]])
     wandb.log({"top_20_critical_alerts": alerts_table})
 
-    tp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == True)])
-    fp = len(df_test_results[(df_test_results['structural_anomaly_score'] >= threshold) & (df_test_results['bad_origin'] == False)])
-    fn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == True)])
-    tn = len(df_test_results[(df_test_results['structural_anomaly_score'] < threshold) & (df_test_results['bad_origin'] == False)])
+    tp = len(df_test_results[(df_test_results['reconstruction_loss'] >= threshold) & (df_test_results['bad_origin'] == True)])
+    fp = len(df_test_results[(df_test_results['reconstruction_loss'] >= threshold) & (df_test_results['bad_origin'] == False)])
+    fn = len(df_test_results[(df_test_results['reconstruction_loss'] < threshold) & (df_test_results['bad_origin'] == True)])
+    tn = len(df_test_results[(df_test_results['reconstruction_loss'] < threshold) & (df_test_results['bad_origin'] == False)])
     
     print(tp, fp, fn, tn)
 
@@ -118,7 +118,7 @@ def main():
     golden_dataloader = DataLoader(golden_dataset, batch_size=128, shuffle=False)
 
     golden_scores = []
-    print("Scoring golden dataset for structural anomalies...")
+    print("Scoring golden dataset for unusual structures...")
     with torch.no_grad():
         for batch in golden_dataloader:
             inputs = batch[0].to(device)
@@ -132,11 +132,11 @@ def main():
             golden_scores.extend(batch_scores)
 
     # 6. ANALYZE THE GOLDEN RESULTS
-    df_golden['structural_anomaly_score'] = golden_scores
+    df_golden['reconstruction_loss'] = golden_scores
     log_test_to_wandb(df_golden, threshold=70)
 
     print("\nGolden Dataset Scoring Complete!")
-    print(df_golden.sort_values(by='structural_anomaly_score', ascending=False).head(50))
+    print(df_golden.sort_values(by='reconstruction_loss', ascending=False).head(50))
     
 if __name__ == "__main__":
     main()
