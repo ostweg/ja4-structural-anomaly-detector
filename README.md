@@ -38,6 +38,8 @@ The model is benchmarked against a One-Class SVM (OC-SVM) baseline trained on th
 - **Training data**: unlabeled JA4/JA4H fingerprints derived from private Microsoft network sessions (sign-in and Graph API activity), assumed to be predominantly benign.
 - **Test data**: a curated, labeled dataset combining benign Microsoft sessions with malware-infected traffic extracted from public PCAP sources ([Malware-Traffic-Analysis.net](https://www.malware-traffic-analysis.net/) and [Stratosphere IPS](https://www.stratosphereips.org/)) using TShark with the JA4+ Wireshark plugin.
 
+The dataset can be found here: https://github.com/ostweg/malicious-ja4-fingerprints
+
 > **Note:** The private Microsoft dataset used for training is not included in this repository due to data sharing restrictions. 
 
 ## Results
